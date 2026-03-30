@@ -93,17 +93,11 @@ def _validate_kelly_inputs(
 ) -> None:
     """Validate common Kelly inputs."""
     if prob < 0.0 or prob > 1.0:
-        raise InvalidProbabilityError(
-            f"Probability must be in [0, 1], got {prob}"
-        )
+        raise InvalidProbabilityError(f"Probability must be in [0, 1], got {prob}")
     if odds_decimal <= 1.0:
-        raise InvalidOddsError(
-            f"Decimal odds must be > 1.0, got {odds_decimal}"
-        )
+        raise InvalidOddsError(f"Decimal odds must be > 1.0, got {odds_decimal}")
     if bankroll is not None and bankroll <= 0:
-        raise InvalidBankrollError(
-            f"Bankroll must be positive, got {bankroll}"
-        )
+        raise InvalidBankrollError(f"Bankroll must be positive, got {bankroll}")
 
 
 # ---------------------------------------------------------------------------
