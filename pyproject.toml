@@ -1,0 +1,39 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "betting-math-kit"
+version = "0.1.0"
+description = "Pure-Python sports betting math: odds conversion, de-vigging, Kelly criterion."
+readme = "README.md"
+requires-python = ">=3.10"
+license = "MIT"
+authors = [
+    { name = "Benjamin Easington", email = "ben@fructura.com" },
+]
+keywords = ["betting", "odds", "kelly-criterion", "devig", "sports-betting", "probability"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "Intended Audience :: Science/Research",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Scientific/Engineering :: Mathematics",
+    "Typing :: Typed",
+]
+
+[project.urls]
+Homepage = "https://github.com/bene-art/betting-math-kit"
+Repository = "https://github.com/bene-art/betting-math-kit"
+Issues = "https://github.com/bene-art/betting-math-kit/issues"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/betting_math_kit"]
