@@ -4,15 +4,14 @@ Odds conversion and basic edge/Kelly calculations.
 Pure functions for converting between American, decimal, and implied
 probability formats, plus edge and Kelly criterion computations.
 
-All functions validate inputs and raise :class:`~betting_math_kit.exceptions.InvalidOddsError`
-or :class:`~betting_math_kit.exceptions.InvalidProbabilityError` on bad data.
+All functions validate inputs and raise typed exceptions
+(:class:`InvalidOddsError`, :class:`InvalidProbabilityError`) on bad data.
 """
 
 from __future__ import annotations
 
 from .exceptions import InvalidOddsError, InvalidProbabilityError
 from .types import DevigMethod, EdgeResult, Side
-
 
 # ---------------------------------------------------------------------------
 # Validation helpers
@@ -23,24 +22,21 @@ def _validate_american_odds(odds: int) -> None:
     """Raise if American odds are invalid."""
     if odds == 0:
         raise InvalidOddsError(
-            "American odds cannot be 0. Use negative for favorites, positive for underdogs."
+            "American odds cannot be 0. "
+            "Use negative for favorites, positive for underdogs."
         )
 
 
 def _validate_probability(prob: float, name: str = "probability") -> None:
     """Raise if probability is outside [0, 1]."""
     if prob < 0.0 or prob > 1.0:
-        raise InvalidProbabilityError(
-            f"{name} must be between 0 and 1, got {prob}"
-        )
+        raise InvalidProbabilityError(f"{name} must be between 0 and 1, got {prob}")
 
 
 def _validate_decimal_odds(decimal_odds: float) -> None:
     """Raise if decimal odds are not > 1."""
     if decimal_odds <= 1.0:
-        raise InvalidOddsError(
-            f"Decimal odds must be > 1.0, got {decimal_odds}"
-        )
+        raise InvalidOddsError(f"Decimal odds must be > 1.0, got {decimal_odds}")
 
 
 # ---------------------------------------------------------------------------
@@ -135,9 +131,7 @@ def implied_prob_to_decimal(prob: float) -> float:
         2.0
     """
     if prob <= 0.0 or prob > 1.0:
-        raise InvalidProbabilityError(
-            f"Probability must be in (0, 1], got {prob}"
-        )
+        raise InvalidProbabilityError(f"Probability must be in (0, 1], got {prob}")
     return 1.0 / prob
 
 

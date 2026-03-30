@@ -35,7 +35,6 @@ from .exceptions import InvalidOddsError, UnknownMethodError
 from .odds import american_to_decimal, decimal_to_implied_prob
 from .types import DevigMethod, DevigResult, MultiOutcomeDevigResult
 
-
 # ---------------------------------------------------------------------------
 # Validation
 # ---------------------------------------------------------------------------
@@ -90,6 +89,15 @@ def _additive(home_impl: float, away_impl: float) -> tuple[float, float]:
     return fair_home / total, fair_away / total
 
 
+def _shin_prob(impl_p: float, z: float, total: float) -> float:
+    """Shin probability for a single outcome."""
+    if z == 0:
+        return impl_p / total
+    denom = 2.0 * (1.0 - z)
+    numerator = (z**2 + 4.0 * (1.0 - z) * impl_p / (1.0 - z)) ** 0.5 - z
+    return float(numerator / denom)
+
+
 def _shin(
     home_impl: float, away_impl: float, max_iter: int = 100
 ) -> tuple[float, float]:
@@ -102,17 +110,9 @@ def _shin(
         if z >= 1:
             z = 0.99
 
-        def shin_prob(impl_p: float) -> float:
-            if z == 0:
-                return impl_p / total
-            denom = 2 * (1 - z)
-            return (
-                ((z**2) + 4 * (1 - z) * impl_p * (1 / (1 - z))) ** 0.5 - z
-            ) / denom
-
         try:
-            p1 = shin_prob(home_impl)
-            p2 = shin_prob(away_impl)
+            p1 = _shin_prob(home_impl, z, total)
+            p2 = _shin_prob(away_impl, z, total)
             prob_sum = p1 + p2
             if abs(prob_sum - 1.0) < 1e-10:
                 break
@@ -123,8 +123,12 @@ def _shin(
         except (ValueError, ZeroDivisionError):
             return _mult(home_impl, away_impl)
 
-    fair_home = shin_prob(home_impl) if z > 0 else home_impl / total
-    fair_away = shin_prob(away_impl) if z > 0 else away_impl / total
+    if z > 0:
+        fair_home = _shin_prob(home_impl, z, total)
+        fair_away = _shin_prob(away_impl, z, total)
+    else:
+        fair_home = home_impl / total
+        fair_away = away_impl / total
 
     norm = fair_home + fair_away
     if norm > 0:
@@ -132,12 +136,22 @@ def _shin(
     return _mult(home_impl, away_impl)
 
 
-_DISPATCH = {
-    DevigMethod.MULTIPLICATIVE: _mult,
-    DevigMethod.POWER: _power,
-    DevigMethod.ADDITIVE: _additive,
-    DevigMethod.SHIN: _shin,
-}
+def _dispatch(
+    method: DevigMethod,
+    home_impl: float,
+    away_impl: float,
+) -> tuple[float, float]:
+    """Dispatch to the correct de-vig algorithm."""
+    if method is DevigMethod.MULTIPLICATIVE:
+        return _mult(home_impl, away_impl)
+    elif method is DevigMethod.POWER:
+        return _power(home_impl, away_impl)
+    elif method is DevigMethod.ADDITIVE:
+        return _additive(home_impl, away_impl)
+    elif method is DevigMethod.SHIN:
+        return _shin(home_impl, away_impl)
+    else:
+        return _mult(home_impl, away_impl)
 
 
 # ---------------------------------------------------------------------------
@@ -188,9 +202,7 @@ def devig_power(home_odds: int, away_odds: int) -> DevigResult:
     away_impl = decimal_to_implied_prob(american_to_decimal(away_odds))
     vig = home_impl + away_impl - 1.0
     fh, fa = _power(home_impl, away_impl)
-    return DevigResult(
-        fair_home=fh, fair_away=fa, method=DevigMethod.POWER, vig=vig
-    )
+    return DevigResult(fair_home=fh, fair_away=fa, method=DevigMethod.POWER, vig=vig)
 
 
 def devig_additive(home_odds: int, away_odds: int) -> DevigResult:
@@ -211,9 +223,7 @@ def devig_additive(home_odds: int, away_odds: int) -> DevigResult:
     away_impl = decimal_to_implied_prob(american_to_decimal(away_odds))
     vig = home_impl + away_impl - 1.0
     fh, fa = _additive(home_impl, away_impl)
-    return DevigResult(
-        fair_home=fh, fair_away=fa, method=DevigMethod.ADDITIVE, vig=vig
-    )
+    return DevigResult(fair_home=fh, fair_away=fa, method=DevigMethod.ADDITIVE, vig=vig)
 
 
 def devig_shin(home_odds: int, away_odds: int) -> DevigResult:
@@ -236,9 +246,7 @@ def devig_shin(home_odds: int, away_odds: int) -> DevigResult:
     away_impl = decimal_to_implied_prob(american_to_decimal(away_odds))
     vig = home_impl + away_impl - 1.0
     fh, fa = _shin(home_impl, away_impl)
-    return DevigResult(
-        fair_home=fh, fair_away=fa, method=DevigMethod.SHIN, vig=vig
-    )
+    return DevigResult(fair_home=fh, fair_away=fa, method=DevigMethod.SHIN, vig=vig)
 
 
 def devig(
@@ -282,8 +290,7 @@ def devig(
     away_impl = decimal_to_implied_prob(american_to_decimal(away_odds))
     vig = home_impl + away_impl - 1.0
 
-    func = _DISPATCH[method]
-    fh, fa = func(home_impl, away_impl)
+    fh, fa = _dispatch(method, home_impl, away_impl)
     return DevigResult(fair_home=fh, fair_away=fa, method=method, vig=vig)
 
 
@@ -326,9 +333,7 @@ def devig_multi(
         try:
             method = DevigMethod(method)
         except ValueError:
-            raise UnknownMethodError(
-                f"Unknown de-vig method {method!r}"
-            ) from None
+            raise UnknownMethodError(f"Unknown de-vig method {method!r}") from None
 
     if method is not DevigMethod.MULTIPLICATIVE:
         raise UnknownMethodError(

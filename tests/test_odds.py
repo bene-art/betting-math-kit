@@ -15,7 +15,6 @@ from betting_math_kit.odds import (
 )
 from betting_math_kit.types import DevigMethod, Side
 
-
 # ===================================================================
 # Odds conversion
 # ===================================================================
@@ -157,9 +156,7 @@ class TestCalculateEdgeCalibrated:
         assert r.pick is Side.HOME
 
     def test_string_method(self):
-        r = calculate_edge_calibrated(
-            0.60, -110, -110, method="power"
-        )
+        r = calculate_edge_calibrated(0.60, -110, -110, method="power")
         assert r.method is DevigMethod.POWER
 
     def test_returns_edge_result(self):
@@ -227,9 +224,7 @@ class TestKellyCalibrated:
         assert stake == 0.0
 
     def test_max_stake_cap(self):
-        stake, _, _, should_bet = kelly_calibrated(
-            0.90, -110, -110, max_stake=0.02
-        )
+        stake, _, _, should_bet = kelly_calibrated(0.90, -110, -110, max_stake=0.02)
         assert should_bet is True
         assert stake <= 0.02
 

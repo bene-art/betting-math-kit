@@ -8,14 +8,12 @@ from betting_math_kit.exceptions import (
     InvalidProbabilityError,
 )
 from betting_math_kit.kelly import (
-    KellyBet,
     compute_kelly_bet,
     expected_roi,
     full_kelly_fraction,
     pool_size_limit,
     size_race_bets,
 )
-
 
 # ===================================================================
 # full_kelly_fraction
@@ -129,24 +127,39 @@ class TestComputeKellyBet:
 
     def test_pool_limiting(self):
         kb = compute_kelly_bet(
-            1, 0.50, 3.0, 100000.0,
-            fraction=1.0, takeout=0.0,
-            pool_size=1000, impact_limit=0.05,
+            1,
+            0.50,
+            3.0,
+            100000.0,
+            fraction=1.0,
+            takeout=0.0,
+            pool_size=1000,
+            impact_limit=0.05,
         )
         assert kb.pool_limited is True
 
     def test_bankroll_cap(self):
         kb = compute_kelly_bet(
-            1, 0.90, 2.0, 1000.0,
-            fraction=1.0, takeout=0.0, max_fraction=0.05,
+            1,
+            0.90,
+            2.0,
+            1000.0,
+            fraction=1.0,
+            takeout=0.0,
+            max_fraction=0.05,
         )
         assert kb.capped is True
         assert kb.bet_size <= 1000 * 0.05 + 1
 
     def test_below_minimum(self):
         kb = compute_kelly_bet(
-            1, 0.30, 5.0, 10.0,
-            fraction=0.01, takeout=0.16, min_bet=2.0,
+            1,
+            0.30,
+            5.0,
+            10.0,
+            fraction=0.01,
+            takeout=0.16,
+            min_bet=2.0,
         )
         assert kb.bet_size == 0.0
         assert "below minimum" in kb.reason
@@ -161,8 +174,13 @@ class TestComputeKellyBet:
         for prob in [0.3, 0.5, 0.7, 0.9]:
             for odds in [2.0, 5.0, 10.0, 20.0]:
                 kb = compute_kelly_bet(
-                    1, prob, odds, 10000.0,
-                    fraction=0.5, takeout=0.0, max_fraction=0.10,
+                    1,
+                    prob,
+                    odds,
+                    10000.0,
+                    fraction=0.5,
+                    takeout=0.0,
+                    max_fraction=0.10,
                 )
                 if kb.bet_size > 0:
                     assert kb.bet_size <= 10000.0 * 0.10 + 1
@@ -212,11 +230,13 @@ class TestSizeRaceBets:
 
     def test_race_exposure_cap(self):
         bets = [
-            {"selection_id": i, "prob": 0.60, "odds_decimal": 3.0}
-            for i in range(5)
+            {"selection_id": i, "prob": 0.60, "odds_decimal": 3.0} for i in range(5)
         ]
         result = size_race_bets(
-            bets, 10000.0, fraction=0.5, takeout=0.0,
+            bets,
+            10000.0,
+            fraction=0.5,
+            takeout=0.0,
             max_race_exposure=0.10,
         )
         total = sum(kb.bet_size for kb in result)

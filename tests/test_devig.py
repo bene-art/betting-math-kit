@@ -14,7 +14,6 @@ from betting_math_kit.devig import (
 from betting_math_kit.exceptions import InvalidOddsError, UnknownMethodError
 from betting_math_kit.types import DevigMethod, DevigResult, MultiOutcomeDevigResult
 
-
 # ===================================================================
 # Result type checks
 # ===================================================================
@@ -287,7 +286,7 @@ class TestInvariants:
         for method in DevigMethod:
             r = devig(home, away, method=method)
             assert r.fair_home > r.fair_away, (
-                f"{method.value}: favorite {r.fair_home:.4f} <= underdog {r.fair_away:.4f}"
+                f"{method.value}: fav {r.fair_home:.4f} <= dog {r.fair_away:.4f}"
             )
 
     def test_vig_monotone_with_juice(self):
