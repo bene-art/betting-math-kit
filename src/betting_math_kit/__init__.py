@@ -1,7 +1,8 @@
 """
 betting-math-kit: Pure-Python sports betting math library.
 
-Odds conversion, de-vigging, Kelly criterion. Zero dependencies.
+Odds conversion, de-vigging, Kelly criterion, calibration metrics,
+and Monte Carlo simulation. Zero dependencies.
 """
 
 from .devig import (
@@ -28,6 +29,15 @@ from .kelly import (
     pool_size_limit,
     size_race_bets,
 )
+from .metrics import (
+    brier_score,
+    calibration_buckets,
+    clv,
+    clv_from_odds,
+    edge_bucket_analysis,
+    expected_calibration_error,
+    log_loss,
+)
 from .odds import (
     american_to_decimal,
     calculate_edge,
@@ -38,6 +48,12 @@ from .odds import (
     kelly_calibrated,
     kelly_fraction,
 )
+from .simulation import (
+    SimulationResult,
+    optimal_fraction_search,
+    risk_of_ruin,
+    simulate_bankroll,
+)
 from .types import (
     DevigMethod,
     DevigResult,
@@ -46,7 +62,7 @@ from .types import (
     Side,
 )
 
-__version__ = "0.2.0"
+__version__ = "0.3.0"
 
 __all__ = [
     # Version
@@ -58,6 +74,7 @@ __all__ = [
     "MultiOutcomeDevigResult",
     "EdgeResult",
     "KellyBet",
+    "SimulationResult",
     # Exceptions
     "BettingMathError",
     "InvalidOddsError",
@@ -88,4 +105,16 @@ __all__ = [
     "pool_size_limit",
     "expected_roi",
     "size_race_bets",
+    # Metrics & calibration
+    "brier_score",
+    "log_loss",
+    "expected_calibration_error",
+    "calibration_buckets",
+    "clv",
+    "clv_from_odds",
+    "edge_bucket_analysis",
+    # Simulation
+    "simulate_bankroll",
+    "risk_of_ruin",
+    "optimal_fraction_search",
 ]

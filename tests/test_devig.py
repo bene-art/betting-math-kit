@@ -226,9 +226,17 @@ class TestDevigMulti:
         with pytest.raises(InvalidOddsError):
             devig_multi([-110, 0, 200])
 
-    def test_non_multiplicative_raises(self):
+    def test_additive_raises(self):
         with pytest.raises(UnknownMethodError):
-            devig_multi([-110, 110], method=DevigMethod.POWER)
+            devig_multi([-110, 110], method=DevigMethod.ADDITIVE)
+
+    def test_power_method(self):
+        r = devig_multi([-110, -110, 300], method=DevigMethod.POWER)
+        assert sum(r.fair_probs) == pytest.approx(1.0, abs=1e-6)
+
+    def test_shin_method(self):
+        r = devig_multi([-110, -110, 300], method=DevigMethod.SHIN)
+        assert sum(r.fair_probs) == pytest.approx(1.0, abs=1e-6)
 
     def test_ordering_preserved(self):
         odds = [150, -200, 300]
