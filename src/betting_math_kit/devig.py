@@ -5,82 +5,65 @@ Four methods, each with different assumptions about how the bookmaker
 allocates margin across outcomes:
 
 - **Multiplicative** (most common): margin is proportional to each side's
-  probability.
+  probability.  Best general-purpose default.
 - **Power**: finds exponent *k* such that p1^k + p2^k = 1.  Better when
-  odds are heavily skewed.
-- **Additive**: splits margin equally across outcomes.  Simple but less
-  accurate.
+  odds are heavily skewed (e.g. -500 / +400).
+- **Additive**: splits margin equally across outcomes.  Simple but least
+  accurate for skewed lines.
 - **Shin** (1991/1992): models margin as a function of informed-bettor
-  proportion.  Best for sharp markets.
+  proportion.  Best for sharp, liquid markets.
 
-All functions accept American odds and return a tuple of fair probabilities
-that sum to 1.0.
+All four methods converge to the same answer on symmetric odds (e.g.
+-110 / -110) and diverge as the line becomes more lopsided.
+
+**When to use which:**
+
+- Default to multiplicative.
+- Use power for heavy favorites (-300 and beyond).
+- Use Shin when you trust that the market is efficient and want
+  to model the favorite-longshot bias.
+- Avoid additive unless you want a quick sanity check.
+
+**n-outcome markets:** Use :func:`devig_multi` for outrights, props
+ladders, or any market with more than two mutually exclusive outcomes.
+Currently only the multiplicative method is supported for n-outcome.
 """
 
 from __future__ import annotations
 
+from .exceptions import InvalidOddsError, UnknownMethodError
 from .odds import american_to_decimal, decimal_to_implied_prob
+from .types import DevigMethod, DevigResult, MultiOutcomeDevigResult
 
 
 # ---------------------------------------------------------------------------
-# Method constants
+# Validation
 # ---------------------------------------------------------------------------
 
 
-class DevigMethod:
-    """De-vig method names (string constants)."""
-
-    MULTIPLICATIVE = "multiplicative"
-    POWER = "power"
-    ADDITIVE = "additive"
-    SHIN = "shin"
+def _validate_american_pair(home_odds: int, away_odds: int) -> None:
+    """Raise on invalid American odds."""
+    if home_odds == 0:
+        raise InvalidOddsError("home_odds cannot be 0")
+    if away_odds == 0:
+        raise InvalidOddsError("away_odds cannot be 0")
 
 
 # ---------------------------------------------------------------------------
-# Core algorithms
+# Two-outcome algorithms (internal, return raw tuples)
 # ---------------------------------------------------------------------------
 
 
-def devig_multiplicative(home_odds: int, away_odds: int) -> tuple[float, float]:
-    """Multiplicative (proportional) margin removal.
-
-    Args:
-        home_odds: American odds for home side.
-        away_odds: American odds for away side.
-
-    Returns:
-        ``(fair_home_prob, fair_away_prob)`` summing to 1.0.
-
-    Examples:
-        >>> h, a = devig_multiplicative(-110, -110)
-        >>> round(h, 2), round(a, 2)
-        (0.5, 0.5)
-    """
-    home_impl = decimal_to_implied_prob(american_to_decimal(home_odds))
-    away_impl = decimal_to_implied_prob(american_to_decimal(away_odds))
+def _mult(home_impl: float, away_impl: float) -> tuple[float, float]:
     total = home_impl + away_impl
     return home_impl / total, away_impl / total
 
 
-def devig_power(
-    home_odds: int, away_odds: int, max_iter: int = 100
+def _power(
+    home_impl: float, away_impl: float, max_iter: int = 100
 ) -> tuple[float, float]:
-    """Power method de-vig (better for uneven odds).
-
-    Finds exponent *k* such that ``p1^k + p2^k = 1``.
-
-    Args:
-        home_odds: American odds for home side.
-        away_odds: American odds for away side.
-        max_iter: Maximum binary-search iterations.
-
-    Returns:
-        ``(fair_home_prob, fair_away_prob)`` summing to 1.0.
-    """
-    home_impl = decimal_to_implied_prob(american_to_decimal(home_odds))
-    away_impl = decimal_to_implied_prob(american_to_decimal(away_odds))
-
     k_low, k_high = 0.5, 2.0
+    k = 1.0
     for _ in range(max_iter):
         k = (k_low + k_high) / 2
         total = home_impl**k + away_impl**k
@@ -97,18 +80,7 @@ def devig_power(
     return fair_home / total, fair_away / total
 
 
-def devig_additive(home_odds: int, away_odds: int) -> tuple[float, float]:
-    """Additive de-vig (equal margin removal from each side).
-
-    Args:
-        home_odds: American odds for home side.
-        away_odds: American odds for away side.
-
-    Returns:
-        ``(fair_home_prob, fair_away_prob)`` summing to 1.0.
-    """
-    home_impl = decimal_to_implied_prob(american_to_decimal(home_odds))
-    away_impl = decimal_to_implied_prob(american_to_decimal(away_odds))
+def _additive(home_impl: float, away_impl: float) -> tuple[float, float]:
     total = home_impl + away_impl
     margin = (total - 1.0) / 2
 
@@ -118,26 +90,12 @@ def devig_additive(home_odds: int, away_odds: int) -> tuple[float, float]:
     return fair_home / total, fair_away / total
 
 
-def devig_shin(
-    home_odds: int, away_odds: int, max_iter: int = 100
+def _shin(
+    home_impl: float, away_impl: float, max_iter: int = 100
 ) -> tuple[float, float]:
-    """Shin method de-vig (accounts for favorite-longshot bias).
-
-    Based on Shin (1991, 1992) model of informed trading.
-
-    Args:
-        home_odds: American odds for home side.
-        away_odds: American odds for away side.
-        max_iter: Maximum binary-search iterations.
-
-    Returns:
-        ``(fair_home_prob, fair_away_prob)`` summing to 1.0.
-    """
-    home_impl = decimal_to_implied_prob(american_to_decimal(home_odds))
-    away_impl = decimal_to_implied_prob(american_to_decimal(away_odds))
     total = home_impl + away_impl
-
     z_low, z_high = 0.0, 0.5
+    z = 0.0
 
     for _ in range(max_iter):
         z = (z_low + z_high) / 2
@@ -163,7 +121,7 @@ def devig_shin(
             else:
                 z_low = z
         except (ValueError, ZeroDivisionError):
-            return devig_multiplicative(home_odds, away_odds)
+            return _mult(home_impl, away_impl)
 
     fair_home = shin_prob(home_impl) if z > 0 else home_impl / total
     fair_away = shin_prob(away_impl) if z > 0 else away_impl / total
@@ -171,47 +129,230 @@ def devig_shin(
     norm = fair_home + fair_away
     if norm > 0:
         return fair_home / norm, fair_away / norm
-    return devig_multiplicative(home_odds, away_odds)
+    return _mult(home_impl, away_impl)
+
+
+_DISPATCH = {
+    DevigMethod.MULTIPLICATIVE: _mult,
+    DevigMethod.POWER: _power,
+    DevigMethod.ADDITIVE: _additive,
+    DevigMethod.SHIN: _shin,
+}
 
 
 # ---------------------------------------------------------------------------
-# Dispatcher + vig calculation
+# Public two-outcome API
 # ---------------------------------------------------------------------------
+
+
+def devig_multiplicative(home_odds: int, away_odds: int) -> DevigResult:
+    """Multiplicative (proportional) margin removal.
+
+    Args:
+        home_odds: American odds for home side.
+        away_odds: American odds for away side.
+
+    Returns:
+        :class:`DevigResult` with fair probabilities summing to 1.0.
+
+    Raises:
+        InvalidOddsError: If either odds value is 0.
+    """
+    _validate_american_pair(home_odds, away_odds)
+    home_impl = decimal_to_implied_prob(american_to_decimal(home_odds))
+    away_impl = decimal_to_implied_prob(american_to_decimal(away_odds))
+    vig = home_impl + away_impl - 1.0
+    fh, fa = _mult(home_impl, away_impl)
+    return DevigResult(
+        fair_home=fh, fair_away=fa, method=DevigMethod.MULTIPLICATIVE, vig=vig
+    )
+
+
+def devig_power(home_odds: int, away_odds: int) -> DevigResult:
+    """Power method de-vig (better for uneven odds).
+
+    Finds exponent *k* such that ``p1^k + p2^k = 1``.
+
+    Args:
+        home_odds: American odds for home side.
+        away_odds: American odds for away side.
+
+    Returns:
+        :class:`DevigResult`.
+
+    Raises:
+        InvalidOddsError: If either odds value is 0.
+    """
+    _validate_american_pair(home_odds, away_odds)
+    home_impl = decimal_to_implied_prob(american_to_decimal(home_odds))
+    away_impl = decimal_to_implied_prob(american_to_decimal(away_odds))
+    vig = home_impl + away_impl - 1.0
+    fh, fa = _power(home_impl, away_impl)
+    return DevigResult(
+        fair_home=fh, fair_away=fa, method=DevigMethod.POWER, vig=vig
+    )
+
+
+def devig_additive(home_odds: int, away_odds: int) -> DevigResult:
+    """Additive de-vig (equal margin removal from each side).
+
+    Args:
+        home_odds: American odds for home side.
+        away_odds: American odds for away side.
+
+    Returns:
+        :class:`DevigResult`.
+
+    Raises:
+        InvalidOddsError: If either odds value is 0.
+    """
+    _validate_american_pair(home_odds, away_odds)
+    home_impl = decimal_to_implied_prob(american_to_decimal(home_odds))
+    away_impl = decimal_to_implied_prob(american_to_decimal(away_odds))
+    vig = home_impl + away_impl - 1.0
+    fh, fa = _additive(home_impl, away_impl)
+    return DevigResult(
+        fair_home=fh, fair_away=fa, method=DevigMethod.ADDITIVE, vig=vig
+    )
+
+
+def devig_shin(home_odds: int, away_odds: int) -> DevigResult:
+    """Shin method de-vig (accounts for favorite-longshot bias).
+
+    Based on Shin (1991, 1992) model of informed trading.
+
+    Args:
+        home_odds: American odds for home side.
+        away_odds: American odds for away side.
+
+    Returns:
+        :class:`DevigResult`.
+
+    Raises:
+        InvalidOddsError: If either odds value is 0.
+    """
+    _validate_american_pair(home_odds, away_odds)
+    home_impl = decimal_to_implied_prob(american_to_decimal(home_odds))
+    away_impl = decimal_to_implied_prob(american_to_decimal(away_odds))
+    vig = home_impl + away_impl - 1.0
+    fh, fa = _shin(home_impl, away_impl)
+    return DevigResult(
+        fair_home=fh, fair_away=fa, method=DevigMethod.SHIN, vig=vig
+    )
 
 
 def devig(
     home_odds: int,
     away_odds: int,
-    method: str = DevigMethod.MULTIPLICATIVE,
-) -> tuple[float, float]:
+    method: DevigMethod | str = DevigMethod.MULTIPLICATIVE,
+) -> DevigResult:
     """Remove vig from a two-sided market.
 
     Args:
         home_odds: American odds for home side.
         away_odds: American odds for away side.
-        method: One of ``"multiplicative"``, ``"power"``, ``"additive"``,
+        method: A :class:`DevigMethod` enum value, or one of the strings
+                ``"multiplicative"``, ``"power"``, ``"additive"``,
                 ``"shin"``.
 
     Returns:
-        ``(fair_home_prob, fair_away_prob)`` summing to 1.0.
+        :class:`DevigResult` with fair probabilities, method, and vig.
+
+    Raises:
+        InvalidOddsError: If either odds value is 0.
+        UnknownMethodError: If *method* is not recognized.
 
     Examples:
-        >>> h, a = devig(-110, -110)
-        >>> round(h, 1), round(a, 1)
-        (0.5, 0.5)
-
-        >>> h, a = devig(-150, 130)
-        >>> round(h, 3), round(a, 3)
-        (0.589, 0.411)
+        >>> r = devig(-110, -110)
+        >>> round(r.fair_home, 1)
+        0.5
     """
-    dispatch = {
-        DevigMethod.MULTIPLICATIVE: devig_multiplicative,
-        DevigMethod.POWER: devig_power,
-        DevigMethod.ADDITIVE: devig_additive,
-        DevigMethod.SHIN: devig_shin,
-    }
-    func = dispatch.get(method, devig_multiplicative)
-    return func(home_odds, away_odds)
+    # Coerce string → enum (raises ValueError on bad string)
+    if isinstance(method, str):
+        try:
+            method = DevigMethod(method)
+        except ValueError:
+            raise UnknownMethodError(
+                f"Unknown de-vig method {method!r}. "
+                f"Valid: {[m.value for m in DevigMethod]}"
+            ) from None
+
+    _validate_american_pair(home_odds, away_odds)
+    home_impl = decimal_to_implied_prob(american_to_decimal(home_odds))
+    away_impl = decimal_to_implied_prob(american_to_decimal(away_odds))
+    vig = home_impl + away_impl - 1.0
+
+    func = _DISPATCH[method]
+    fh, fa = func(home_impl, away_impl)
+    return DevigResult(fair_home=fh, fair_away=fa, method=method, vig=vig)
+
+
+# ---------------------------------------------------------------------------
+# n-outcome de-vig
+# ---------------------------------------------------------------------------
+
+
+def devig_multi(
+    odds_list: list[int],
+    method: DevigMethod | str = DevigMethod.MULTIPLICATIVE,
+) -> MultiOutcomeDevigResult:
+    """Remove vig from an n-outcome market (outrights, props ladders, etc.).
+
+    Currently only the **multiplicative** method is supported for n > 2.
+
+    Args:
+        odds_list: American odds for each outcome. Must have >= 2 entries.
+                   None of the values may be 0.
+        method: De-vig algorithm (only ``MULTIPLICATIVE`` for now).
+
+    Returns:
+        :class:`MultiOutcomeDevigResult` with fair probabilities in the
+        same order as *odds_list*.
+
+    Raises:
+        InvalidOddsError: If any odds value is 0.
+        ValueError: If fewer than 2 outcomes are provided.
+        UnknownMethodError: If *method* is not ``MULTIPLICATIVE``.
+
+    Examples:
+        >>> r = devig_multi([200, 300, 150])
+        >>> sum(r.fair_probs)  # doctest: +ELLIPSIS
+        1.0...
+    """
+    if len(odds_list) < 2:
+        raise ValueError("Need at least 2 outcomes for de-vigging")
+
+    if isinstance(method, str):
+        try:
+            method = DevigMethod(method)
+        except ValueError:
+            raise UnknownMethodError(
+                f"Unknown de-vig method {method!r}"
+            ) from None
+
+    if method is not DevigMethod.MULTIPLICATIVE:
+        raise UnknownMethodError(
+            f"n-outcome de-vig only supports MULTIPLICATIVE, got {method.value}"
+        )
+
+    implied = []
+    for odds in odds_list:
+        if odds == 0:
+            raise InvalidOddsError("American odds cannot be 0")
+        implied.append(decimal_to_implied_prob(american_to_decimal(odds)))
+
+    total = sum(implied)
+    vig = total - 1.0
+    fair = tuple(p / total for p in implied)
+
+    return MultiOutcomeDevigResult(
+        fair_probs=fair, method=method, vig=vig, n_outcomes=len(odds_list)
+    )
+
+
+# ---------------------------------------------------------------------------
+# Vig calculation
+# ---------------------------------------------------------------------------
 
 
 def get_vig(home_odds: int, away_odds: int) -> float:
@@ -224,10 +365,14 @@ def get_vig(home_odds: int, away_odds: int) -> float:
     Returns:
         Vig as a decimal (0.048 = 4.8 % vig).
 
+    Raises:
+        InvalidOddsError: If either odds value is 0.
+
     Examples:
         >>> round(get_vig(-110, -110), 3)
         0.048
     """
+    _validate_american_pair(home_odds, away_odds)
     home_impl = decimal_to_implied_prob(american_to_decimal(home_odds))
     away_impl = decimal_to_implied_prob(american_to_decimal(away_odds))
     return home_impl + away_impl - 1.0

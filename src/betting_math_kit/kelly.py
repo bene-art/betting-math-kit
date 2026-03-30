@@ -38,8 +38,10 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+from .exceptions import InvalidBankrollError, InvalidOddsError, InvalidProbabilityError
+
 # ---------------------------------------------------------------------------
-# Constants
+# Constants (defaults — override per call)
 # ---------------------------------------------------------------------------
 
 DEFAULT_FRACTION = 0.25
@@ -82,7 +84,30 @@ class KellyBet:
 
 
 # ---------------------------------------------------------------------------
-# Core Kelly math
+# Validation
+# ---------------------------------------------------------------------------
+
+
+def _validate_kelly_inputs(
+    prob: float, odds_decimal: float, bankroll: float | None = None
+) -> None:
+    """Validate common Kelly inputs."""
+    if prob < 0.0 or prob > 1.0:
+        raise InvalidProbabilityError(
+            f"Probability must be in [0, 1], got {prob}"
+        )
+    if odds_decimal <= 1.0:
+        raise InvalidOddsError(
+            f"Decimal odds must be > 1.0, got {odds_decimal}"
+        )
+    if bankroll is not None and bankroll <= 0:
+        raise InvalidBankrollError(
+            f"Bankroll must be positive, got {bankroll}"
+        )
+
+
+# ---------------------------------------------------------------------------
+# Core Kelly math (pure — no policy)
 # ---------------------------------------------------------------------------
 
 
@@ -93,19 +118,27 @@ def full_kelly_fraction(
 ) -> float:
     """Compute full Kelly fraction of bankroll to wager.
 
+    This is the **pure math** layer — no caps, no floors, no policy.
+
     Args:
-        prob: Estimated win probability (0-1).
-        odds_decimal: Decimal odds (e.g. 4.0 for 3-to-1).
+        prob: Estimated win probability in (0, 1).
+        odds_decimal: Decimal odds (e.g. 4.0 for 3-to-1). Must be > 1.
         takeout: Pari-mutuel takeout rate (default 16 %).
 
     Returns:
         Kelly fraction in [0, 1]. Returns 0 if no edge after friction.
 
+    Raises:
+        InvalidProbabilityError: If *prob* is outside [0, 1].
+        InvalidOddsError: If *odds_decimal* <= 1.
+
     Examples:
         >>> full_kelly_fraction(0.30, 5.0)  # doctest: +ELLIPSIS
         0.08...
     """
-    if prob <= 0 or prob >= 1 or odds_decimal <= 1:
+    _validate_kelly_inputs(prob, odds_decimal)
+
+    if prob == 0.0 or prob == 1.0:
         return 0.0
 
     effective_odds = 1.0 + (odds_decimal - 1.0) * (1.0 - takeout)
@@ -126,16 +159,16 @@ def pool_size_limit(
     """Maximum bet size before significantly moving the odds.
 
     In pari-mutuel betting your bet enters the pool and changes the
-    effective odds. This returns the largest bet that keeps odds impact
+    effective odds.  This returns the largest bet that keeps odds impact
     within *impact_limit*.
 
     Args:
-        pool_size: Total dollars in the win pool.
-        odds_decimal: Current decimal odds for this selection.
+        pool_size: Total dollars in the win pool (must be > 0).
+        odds_decimal: Current decimal odds for this selection (must be > 1).
         impact_limit: Maximum acceptable fractional change in odds.
 
     Returns:
-        Maximum bet size in dollars.
+        Maximum bet size in dollars. Returns 0 if any input is invalid.
 
     Examples:
         >>> pool_size_limit(100_000, 20.0)
@@ -146,10 +179,24 @@ def pool_size_limit(
     return pool_size * impact_limit / odds_decimal
 
 
-def _expected_roi(prob: float, odds_decimal: float, takeout: float) -> float:
-    """Expected ROI after takeout."""
+def expected_roi(prob: float, odds_decimal: float, takeout: float) -> float:
+    """Expected ROI after takeout.
+
+    Args:
+        prob: Win probability in (0, 1).
+        odds_decimal: Decimal odds (> 1).
+        takeout: Pari-mutuel takeout rate.
+
+    Returns:
+        Expected ROI as a decimal (-0.1 = -10 %, 0.05 = +5 %).
+    """
     effective_odds = 1.0 + (odds_decimal - 1.0) * (1.0 - takeout)
     return prob * effective_odds - 1.0
+
+
+# ---------------------------------------------------------------------------
+# Constrained Kelly (math + policy)
+# ---------------------------------------------------------------------------
 
 
 def compute_kelly_bet(
@@ -174,12 +221,17 @@ def compute_kelly_bet(
         5. Apply max bankroll fraction cap.
         6. Apply minimum bet threshold.
 
+    .. note::
+
+       Steps 4-6 are **policy** constraints layered on top of the pure
+       Kelly math.  The defaults are conservative starting points.
+
     Args:
         selection_id: Identifier for the selection.
-        prob: Estimated win probability (0-1).
-        odds_decimal: Decimal odds (e.g. 4.0 for 3-to-1).
-        bankroll: Current bankroll in dollars.
-        fraction: Kelly fraction multiplier (default 0.25).
+        prob: Estimated win probability in (0, 1).
+        odds_decimal: Decimal odds (must be > 1).
+        bankroll: Current bankroll in dollars (must be > 0).
+        fraction: Kelly fraction multiplier (default 0.25 = quarter-Kelly).
         takeout: Pari-mutuel takeout (default 16 %).
         pool_size: Total win pool in dollars (None if unknown).
         impact_limit: Max odds impact from our bet (default 5 %).
@@ -188,7 +240,14 @@ def compute_kelly_bet(
 
     Returns:
         :class:`KellyBet` with sizing details and constraint flags.
+
+    Raises:
+        InvalidProbabilityError: If *prob* is outside [0, 1].
+        InvalidOddsError: If *odds_decimal* <= 1.
+        InvalidBankrollError: If *bankroll* <= 0.
     """
+    _validate_kelly_inputs(prob, odds_decimal, bankroll)
+
     fk = full_kelly_fraction(prob, odds_decimal, takeout)
 
     if fk <= 0:
@@ -197,7 +256,7 @@ def compute_kelly_bet(
             full_kelly=0.0,
             fractional_kelly=0.0,
             bet_size=0.0,
-            edge=prob - 1.0 / odds_decimal if odds_decimal > 0 else 0.0,
+            edge=prob - 1.0 / odds_decimal,
             expected_roi=0.0,
             pool_limited=False,
             capped=False,
@@ -227,7 +286,7 @@ def compute_kelly_bet(
             fractional_kelly=frac_kelly,
             bet_size=0.0,
             edge=prob - 1.0 / odds_decimal,
-            expected_roi=_expected_roi(prob, odds_decimal, takeout),
+            expected_roi=expected_roi(prob, odds_decimal, takeout),
             pool_limited=pool_limited,
             capped=capped,
             reason=f"bet ${bet:.2f} below minimum ${min_bet:.2f}",
@@ -237,7 +296,7 @@ def compute_kelly_bet(
     bet = max(min_bet, bet)
 
     edge = prob - 1.0 / odds_decimal
-    roi = _expected_roi(prob, odds_decimal, takeout)
+    roi = expected_roi(prob, odds_decimal, takeout)
 
     parts = [f"Kelly {fk:.1%} x {fraction:.0%} = {frac_kelly:.2%}"]
     if pool_limited:
@@ -276,7 +335,7 @@ def size_race_bets(
     Args:
         bets: List of dicts with keys ``selection_id``, ``prob``,
               ``odds_decimal``, and optionally ``pool_size``.
-        bankroll: Current bankroll in dollars.
+        bankroll: Current bankroll in dollars (must be > 0).
         fraction: Kelly fraction multiplier.
         takeout: Pari-mutuel takeout.
         max_race_exposure: Max total fraction of bankroll per race.
@@ -284,7 +343,13 @@ def size_race_bets(
     Returns:
         List of :class:`KellyBet`, sorted by ``bet_size`` descending.
         Only includes selections with positive bet sizes.
+
+    Raises:
+        InvalidBankrollError: If *bankroll* <= 0.
     """
+    if bankroll <= 0:
+        raise InvalidBankrollError(f"Bankroll must be positive, got {bankroll}")
+
     sized = []
     for bet_info in bets:
         kb = compute_kelly_bet(
