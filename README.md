@@ -1,14 +1,16 @@
 # betting-math-kit
 
-Pure-Python sports betting math. Zero dependencies. Tested.
+Pure-Python sports betting math. Zero dependencies. Typed. Tested.
 
 ## What's in the box
 
 | Module | What it does |
 |--------|-------------|
-| `odds` | Convert between American, decimal, and implied probability formats. Basic edge and Kelly calculations for fixed-odds markets. |
-| `devig` | Remove bookmaker margin (vig) to recover fair probabilities. Four methods: multiplicative, power, additive, Shin. |
-| `kelly` | Pari-mutuel Kelly criterion with pool-size liquidity constraints, friction adjustment (takeout), and race-level exposure caps. |
+| `odds` | Convert between American, decimal, and implied probability. Edge calculation (naive and calibrated). Fixed-odds Kelly. |
+| `devig` | Remove bookmaker margin (vig) to recover fair probabilities. Four methods: multiplicative, power, additive, Shin. Supports 2-outcome and n-outcome markets. |
+| `kelly` | Pari-mutuel Kelly criterion with pool-size liquidity constraints, takeout friction, and race-level exposure caps. |
+| `types` | Domain types: `Side`, `DevigMethod` (enums), `DevigResult`, `EdgeResult`, `MultiOutcomeDevigResult`, `KellyBet` (frozen dataclasses). |
+| `exceptions` | `InvalidOddsError`, `InvalidProbabilityError`, `InvalidBankrollError`, `UnknownMethodError`. |
 
 ## Install
 
@@ -21,7 +23,7 @@ Or from source:
 ```bash
 git clone https://github.com/bene-art/betting-math-kit.git
 cd betting-math-kit
-pip install -e .
+pip install -e ".[dev]"
 ```
 
 ## Quick start
@@ -31,24 +33,32 @@ pip install -e .
 ```python
 from betting_math_kit import american_to_decimal, decimal_to_implied_prob
 
-decimal = american_to_decimal(-150)   # 1.667
-prob = decimal_to_implied_prob(decimal)  # 0.6
+decimal = american_to_decimal(-150)      # 1.667
+prob = decimal_to_implied_prob(decimal)   # 0.6
 ```
 
-### De-vig a market
+### De-vig a two-sided market
 
 ```python
-from betting_math_kit import devig, get_vig
+from betting_math_kit import devig, get_vig, DevigMethod
 
-# Standard -110/-110 line
-fair_home, fair_away = devig(-110, -110)
-# (0.5, 0.5) -- the vig disappears
+r = devig(-110, -110)
+# DevigResult(fair_home=0.5, fair_away=0.5, method=MULTIPLICATIVE, vig=0.048)
 
-vig = get_vig(-110, -110)
-# 0.048 (4.8% margin)
+r = devig(-300, 250, method=DevigMethod.POWER)
+# Uses the power method for skewed lines
 
-# Use the power method for skewed lines
-fair_home, fair_away = devig(-300, 250, method="power")
+vig = get_vig(-110, -110)  # 0.048 (4.8% margin)
+```
+
+### De-vig an n-outcome market (outrights, props)
+
+```python
+from betting_math_kit import devig_multi
+
+r = devig_multi([200, 300, 150, 800])
+# MultiOutcomeDevigResult with fair_probs summing to 1.0
+print(r.fair_probs)  # (0.31, 0.21, 0.36, 0.10) approximately
 ```
 
 ### Calculate true edge
@@ -56,10 +66,12 @@ fair_home, fair_away = devig(-300, 250, method="power")
 ```python
 from betting_math_kit import calculate_edge_calibrated
 
-# Your model says 60% home win, book has -110/-110
-true_edge, fair_prob, raw_edge = calculate_edge_calibrated(0.60, -110, -110)
-# true_edge = 0.10 (10% edge vs fair 50%)
-# raw_edge = 0.076 (7.6% vs vigged implied -- overstated!)
+r = calculate_edge_calibrated(0.60, -110, -110)
+# EdgeResult with:
+#   r.true_edge = 0.10  (10% edge vs fair 50%)
+#   r.raw_edge  = 0.076 (7.6% vs vigged implied -- overstated!)
+#   r.fair_prob = 0.50
+#   r.method    = DevigMethod.MULTIPLICATIVE
 ```
 
 ### Kelly criterion (fixed-odds)
@@ -73,7 +85,7 @@ stake, edge, fair, should_bet = kelly_calibrated(
     away_odds=-110,
     kelly_fraction_mult=0.25,  # quarter-Kelly
 )
-# should_bet = True, stake ~ 3.3% of bankroll
+# should_bet=True, stake~3.3% of bankroll
 ```
 
 ### Kelly criterion (pari-mutuel / horse racing)
@@ -90,9 +102,9 @@ bet = compute_kelly_bet(
     takeout=0.16,        # 16% track takeout
     pool_size=50_000,    # win pool size (optional)
 )
-print(bet.bet_size)    # dollar amount
-print(bet.reason)      # human-readable explanation
-print(bet.pool_limited)  # True if pool constraint kicked in
+print(bet.bet_size)       # dollar amount
+print(bet.reason)         # human-readable explanation
+print(bet.pool_limited)   # True if pool constraint kicked in
 ```
 
 ### Size an entire race
@@ -115,16 +127,51 @@ for b in bets:
 
 | Method | Best for | How it works |
 |--------|----------|-------------|
-| `multiplicative` | General use | Scales each implied prob proportionally. Most common. |
-| `power` | Skewed lines | Finds exponent k where p1^k + p2^k = 1. More accurate for heavy favorites. |
-| `additive` | Quick estimates | Subtracts equal margin from each side. Simple but least accurate. |
-| `shin` | Sharp markets | Models margin as informed-bettor proportion (Shin 1991). Best for liquid markets. |
+| `MULTIPLICATIVE` | General use | Scales each implied prob proportionally. Most common. |
+| `POWER` | Skewed lines (-300+) | Finds exponent k where p1^k + p2^k = 1. More accurate for heavy favorites. |
+| `ADDITIVE` | Quick estimates | Subtracts equal margin from each side. Simple but least accurate. |
+| `SHIN` | Sharp markets | Models margin as informed-bettor proportion (Shin 1991). Best for liquid markets with favorite-longshot bias. |
+
+All four methods converge on symmetric odds and diverge as the line becomes more lopsided. Default to multiplicative unless you have a reason not to.
+
+## Assumptions and caveats
+
+- **Two-outcome de-vig** assumes a binary market (moneyline, spread, total). For n-outcome markets, use `devig_multi()`.
+- **n-outcome de-vig** currently only supports the multiplicative method. Power and Shin for n > 2 are not yet implemented.
+- **Shin method** uses binary search with 100 iterations and 1e-10 tolerance. Falls back to multiplicative on numerical failure.
+- **Power method** uses binary search with k in [0.5, 2.0]. This range covers typical bookmaker margins but may not converge for extreme synthetic inputs.
+- **Kelly sizing** is pure math. The `compute_kelly_bet()` function layers policy constraints (caps, floors, pool limits) on top. Separate your math from your risk policy.
+- **Pari-mutuel takeout** defaults to 16% (US win bet standard). Adjust for your jurisdiction.
+- **Pool-size limit** uses a simplified linear model. Real pool dynamics are more complex.
+
+## Validation
+
+All public functions validate inputs and raise typed exceptions:
+
+| Exception | When |
+|-----------|------|
+| `InvalidOddsError` | American odds = 0, decimal odds <= 1 |
+| `InvalidProbabilityError` | Probability outside [0, 1] |
+| `InvalidBankrollError` | Bankroll <= 0 |
+| `UnknownMethodError` | Unrecognized de-vig method string |
+
+Unknown de-vig methods **raise** rather than silently falling back.
 
 ## Running tests
 
 ```bash
-pip install pytest
+pip install -e ".[dev]"
 pytest
+```
+
+141 tests covering odds conversion, all four de-vig methods, n-outcome de-vig, Kelly sizing, validation failures, round-trip invariants, monotonicity checks, and boundary conditions.
+
+## Development
+
+```bash
+ruff check src/ tests/    # lint
+ruff format src/ tests/   # format
+mypy src/betting_math_kit/  # type check
 ```
 
 ## License

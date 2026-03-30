@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "betting-math-kit"
-version = "0.1.0"
+version = "0.2.0"
 description = "Pure-Python sports betting math: odds conversion, de-vigging, Kelly criterion."
 readme = "README.md"
 requires-python = ">=3.10"
@@ -32,8 +32,24 @@ Homepage = "https://github.com/bene-art/betting-math-kit"
 Repository = "https://github.com/bene-art/betting-math-kit"
 Issues = "https://github.com/bene-art/betting-math-kit/issues"
 
+[project.optional-dependencies]
+dev = ["pytest>=7.0", "mypy>=1.0", "ruff>=0.4"]
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+
+[tool.ruff]
+target-version = "py310"
+line-length = 88
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "W", "UP", "B", "SIM"]
+
+[tool.mypy]
+python_version = "3.10"
+warn_return_any = true
+warn_unused_configs = true
+disallow_untyped_defs = true
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/betting_math_kit"]
