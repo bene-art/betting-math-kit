@@ -26,7 +26,8 @@ All four methods converge to the same answer on symmetric odds (e.g.
 
 **n-outcome markets:** Use :func:`devig_multi` for outrights, props
 ladders, or any market with more than two mutually exclusive outcomes.
-Currently only the multiplicative method is supported for n-outcome.
+Multiplicative, power, and Shin methods are supported for n-outcome.
+Additive does not generalize well to n outcomes and is not supported.
 """
 
 from __future__ import annotations
@@ -299,18 +300,113 @@ def devig(
 # ---------------------------------------------------------------------------
 
 
+def _power_multi(implied: list[float], max_iter: int = 100) -> tuple[float, ...]:
+    """Power method for n-outcome markets.
+
+    Finds exponent *k* such that ``sum(p_i^k) = 1`` via binary search.
+
+    Args:
+        implied: Implied probabilities (sum > 1 due to vig).
+        max_iter: Maximum binary-search iterations.
+
+    Returns:
+        Tuple of fair probabilities summing to 1.
+    """
+    k_low, k_high = 0.01, 5.0
+    k = 1.0
+    for _ in range(max_iter):
+        k = (k_low + k_high) / 2
+        total = sum(p**k for p in implied)
+        if abs(total - 1.0) < 1e-10:
+            break
+        elif total > 1:
+            k_high = k
+        else:
+            k_low = k
+
+    fair = tuple(p**k for p in implied)
+    norm = sum(fair)
+    return tuple(f / norm for f in fair)
+
+
+def _shin_multi(implied: list[float], max_iter: int = 100) -> tuple[float, ...]:
+    """Shin method for n-outcome markets.
+
+    Generalizes the Shin (1991/1992) model to *n* outcomes. Binary-searches
+    for the informed-bettor proportion *z* such that the Shin fair
+    probabilities sum to 1.
+
+    For each implied probability *p_i* the fair probability is::
+
+        fair_i = (sqrt(z² + 4·(1-z)·p_i / S) - z) / (2·(1-z))
+
+    where *S* = ``sum(implied)``.
+
+    Falls back to multiplicative on numerical failure.
+
+    Args:
+        implied: Implied probabilities (sum > 1 due to vig).
+        max_iter: Maximum binary-search iterations.
+
+    Returns:
+        Tuple of fair probabilities summing to 1.
+    """
+    sum_implied = sum(implied)
+
+    def _shin_fair(p_i: float, z: float) -> float:
+        if z == 0:
+            return p_i / sum_implied
+        denom = 2.0 * (1.0 - z)
+        inner = z**2 + 4.0 * (1.0 - z) * p_i / sum_implied
+        return float((inner**0.5 - z) / denom)
+
+    z_low, z_high = 0.0, 0.5
+    z = 0.0
+
+    for _ in range(max_iter):
+        z = (z_low + z_high) / 2
+        try:
+            fairs = [_shin_fair(p, z) for p in implied]
+            prob_sum = sum(fairs)
+            if abs(prob_sum - 1.0) < 1e-10:
+                break
+            elif prob_sum > 1:
+                z_high = z
+            else:
+                z_low = z
+        except (ValueError, ZeroDivisionError):
+            # Numerical failure — fall back to multiplicative
+            return tuple(p / sum_implied for p in implied)
+
+    if z > 0:
+        try:
+            fairs = [_shin_fair(p, z) for p in implied]
+        except (ValueError, ZeroDivisionError):
+            return tuple(p / sum_implied for p in implied)
+    else:
+        fairs = [p / sum_implied for p in implied]
+
+    norm = sum(fairs)
+    if norm > 0:
+        return tuple(f / norm for f in fairs)
+    return tuple(p / sum_implied for p in implied)
+
+
 def devig_multi(
     odds_list: list[int],
     method: DevigMethod | str = DevigMethod.MULTIPLICATIVE,
 ) -> MultiOutcomeDevigResult:
     """Remove vig from an n-outcome market (outrights, props ladders, etc.).
 
-    Currently only the **multiplicative** method is supported for n > 2.
+    Supports **multiplicative**, **power**, and **Shin** methods.
+    Additive is not supported for n-outcome markets (does not generalize
+    well).
 
     Args:
         odds_list: American odds for each outcome. Must have >= 2 entries.
                    None of the values may be 0.
-        method: De-vig algorithm (only ``MULTIPLICATIVE`` for now).
+        method: A :class:`DevigMethod` enum value, or one of the strings
+                ``"multiplicative"``, ``"power"``, ``"shin"``.
 
     Returns:
         :class:`MultiOutcomeDevigResult` with fair probabilities in the
@@ -319,7 +415,7 @@ def devig_multi(
     Raises:
         InvalidOddsError: If any odds value is 0.
         ValueError: If fewer than 2 outcomes are provided.
-        UnknownMethodError: If *method* is not ``MULTIPLICATIVE``.
+        UnknownMethodError: If *method* is ``ADDITIVE`` or unrecognized.
 
     Examples:
         >>> r = devig_multi([200, 300, 150])
@@ -335,12 +431,12 @@ def devig_multi(
         except ValueError:
             raise UnknownMethodError(f"Unknown de-vig method {method!r}") from None
 
-    if method is not DevigMethod.MULTIPLICATIVE:
+    if method is DevigMethod.ADDITIVE:
         raise UnknownMethodError(
-            f"n-outcome de-vig only supports MULTIPLICATIVE, got {method.value}"
+            "Additive method does not generalize to n-outcome markets"
         )
 
-    implied = []
+    implied: list[float] = []
     for odds in odds_list:
         if odds == 0:
             raise InvalidOddsError("American odds cannot be 0")
@@ -348,7 +444,15 @@ def devig_multi(
 
     total = sum(implied)
     vig = total - 1.0
-    fair = tuple(p / total for p in implied)
+
+    if method is DevigMethod.MULTIPLICATIVE:
+        fair = tuple(p / total for p in implied)
+    elif method is DevigMethod.POWER:
+        fair = _power_multi(implied)
+    elif method is DevigMethod.SHIN:
+        fair = _shin_multi(implied)
+    else:
+        raise UnknownMethodError(f"Unsupported n-outcome de-vig method: {method.value}")
 
     return MultiOutcomeDevigResult(
         fair_probs=fair, method=method, vig=vig, n_outcomes=len(odds_list)

@@ -4,8 +4,8 @@ build-backend = "hatchling.build"
 
 [project]
 name = "betting-math-kit"
-version = "0.2.0"
-description = "Pure-Python sports betting math: odds conversion, de-vigging, Kelly criterion."
+version = "0.3.0"
+description = "Pure-Python sports betting math: odds conversion, de-vigging, Kelly criterion, calibration metrics, Monte Carlo simulation."
 readme = "README.md"
 requires-python = ">=3.10"
 license = "MIT"
