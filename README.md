@@ -6,6 +6,8 @@
 
 Pure-Python sports betting math. Zero dependencies. Typed. Tested.
 
+> **Status:** Stable. Pulled from a larger private system to demonstrate this slice as a standalone tool. Treat as a snapshot, not current production.
+
 ## Where this fits
 
 [props-scorer](https://github.com/bene-art/props-scorer) takes player stats and returns a probability. This library takes that probability and tells you what to do with it — how much edge you have, how much to bet, and whether your model is actually any good over time.
