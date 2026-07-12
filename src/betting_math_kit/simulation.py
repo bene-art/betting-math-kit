@@ -126,6 +126,7 @@ def simulate_bankroll(
     n_bets: int = 1000,
     n_trials: int = 10_000,
     seed: int | None = None,
+    ruin_threshold: float = 0.0,
 ) -> SimulationResult:
     """Monte Carlo simulation of bankroll trajectory.
 
@@ -148,6 +149,9 @@ def simulate_bankroll(
         Number of independent trials (default 10 000).
     seed:
         Optional RNG seed for reproducibility.
+    ruin_threshold:
+        Bankroll level that counts as ruin (default 0). A trial is
+        considered ruined when ``bankroll <= ruin_threshold``.
 
     Returns
     -------
@@ -195,7 +199,7 @@ def simulate_bankroll(
             else:
                 br -= stake
 
-            if br <= 0:
+            if br <= ruin_threshold:
                 br = 0.0
                 ruined = True
                 break
@@ -262,8 +266,8 @@ def risk_of_ruin(
     fraction:
         Fraction of Kelly to wager.
     ruin_threshold:
-        Bankroll level that counts as ruin (default 0).
-        Currently unused — ruin is defined as bankroll <= 0.
+        Bankroll level that counts as ruin (default 0). Passed
+        directly to :func:`simulate_bankroll`.
     n_bets:
         Bets per trial.
     n_trials:
@@ -284,6 +288,7 @@ def risk_of_ruin(
         n_bets=n_bets,
         n_trials=n_trials,
         seed=seed,
+        ruin_threshold=ruin_threshold,
     )
     return result.ruin_rate
 
