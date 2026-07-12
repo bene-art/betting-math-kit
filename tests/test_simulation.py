@@ -128,8 +128,12 @@ class TestRuinThreshold:
     def test_higher_threshold_raises_ruin_rate(self):
         """A non-zero ruin threshold should yield a higher ruin rate."""
         kwargs = dict(
-            edge=0.03, odds_decimal=2.0, fraction=0.25,
-            n_bets=500, n_trials=2000, seed=7,
+            edge=0.03,
+            odds_decimal=2.0,
+            fraction=0.25,
+            n_bets=500,
+            n_trials=2000,
+            seed=7,
         )
         rate_zero = risk_of_ruin(**kwargs, ruin_threshold=0.0)
         rate_high = risk_of_ruin(**kwargs, ruin_threshold=200.0)
@@ -151,8 +155,12 @@ class TestRuinThreshold:
 
     def test_threshold_zero_matches_no_threshold(self):
         kwargs = dict(
-            edge=0.03, odds_decimal=2.0, fraction=0.25,
-            n_bets=100, n_trials=500, seed=3,
+            edge=0.03,
+            odds_decimal=2.0,
+            fraction=0.25,
+            n_bets=100,
+            n_trials=500,
+            seed=3,
         )
         rate_explicit = risk_of_ruin(**kwargs, ruin_threshold=0.0)
         rate_default = risk_of_ruin(**kwargs)
