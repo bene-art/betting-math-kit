@@ -275,12 +275,16 @@ CI runs on Python 3.10 - 3.13.
 
 ## Where this fits in the system
 
-This is one piece of a larger sports betting system I've been building. The full thing includes agents, databases, RAG pipelines, and a lot of stuff that's too messy or too personal to open-source. These two repos are the clean, standalone layers:
+Four repos, four concerns:
 
-- [**props-scorer**](https://github.com/bene-art/props-scorer) — The model. Takes player stats, returns probabilities.
-- [**betting-math-kit**](https://github.com/bene-art/betting-math-kit) — The math. Takes probabilities, returns bet sizes.
+| Repo | Question it answers |
+|------|---------------------|
+| [**props-scorer**](https://github.com/bene-art/props-scorer) | What's going to happen? |
+| [**betting-math-kit**](https://github.com/bene-art/betting-math-kit) | What should I do about it? |
+| [**bet-tracker**](https://github.com/bene-art/bet-tracker) | Did it work? |
+| [**backtester**](https://github.com/bene-art/backtester) | Would it have worked? |
 
-props-scorer answers "what's going to happen?" This library answers "given what you think is going to happen, what should you do about it?"
+They work independently or together. This library sits in the middle of the pipeline: props-scorer feeds it probabilities, and both backtester and bet-tracker depend on it for de-vig and Kelly sizing.
 
 ## License
 
