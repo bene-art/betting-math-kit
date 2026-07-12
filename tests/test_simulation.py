@@ -122,3 +122,32 @@ class TestOptimalFractionSearch:
     def test_default_fractions(self):
         results = optimal_fraction_search(0.05, 2.0, n_bets=10, n_trials=10, seed=42)
         assert len(results) == 8  # default list has 8 entries
+
+
+class TestRuinThreshold:
+    def test_higher_threshold_raises_ruin_rate(self):
+        """A non-zero ruin threshold should yield a higher ruin rate."""
+        kwargs = dict(edge=0.03, odds_decimal=2.0, fraction=0.25, n_bets=500, n_trials=2000, seed=7)
+        rate_zero = risk_of_ruin(**kwargs, ruin_threshold=0.0)
+        rate_high = risk_of_ruin(**kwargs, ruin_threshold=200.0)
+        # Ruin at 20% of starting bankroll should be > ruin at 0
+        assert rate_high >= rate_zero
+
+    def test_threshold_above_starting_bankroll_ruins_all(self):
+        """Threshold above starting bankroll means every trial is ruined immediately."""
+        rate = risk_of_ruin(
+            edge=0.05,
+            odds_decimal=2.0,
+            fraction=0.25,
+            ruin_threshold=2000.0,
+            n_bets=10,
+            n_trials=100,
+            seed=1,
+        )
+        assert rate == 1.0
+
+    def test_threshold_zero_matches_no_threshold(self):
+        kwargs = dict(edge=0.03, odds_decimal=2.0, fraction=0.25, n_bets=100, n_trials=500, seed=3)
+        rate_explicit = risk_of_ruin(**kwargs, ruin_threshold=0.0)
+        rate_default = risk_of_ruin(**kwargs)
+        assert rate_explicit == rate_default
