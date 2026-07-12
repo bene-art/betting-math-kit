@@ -91,11 +91,20 @@ def _additive(home_impl: float, away_impl: float) -> tuple[float, float]:
 
 
 def _shin_prob(impl_p: float, z: float, total: float) -> float:
-    """Shin probability for a single outcome."""
+    """Shin probability for a single outcome.
+
+    Shin (1991): fair_i = (sqrt(z² + 4(1−z)·q_i) − z) / (2(1−z))
+    where q_i = impl_p / total is the normalised vigged probability.
+    NOTE: the two-outcome version passes ``total`` but the binary search
+    in ``_shin`` converges independently; ``_shin_multi`` applies the
+    normalisation explicitly. The formula here simplifies because ``_shin``
+    binary-searches z until p1 + p2 = 1, which absorbs the normalisation.
+    """
     if z == 0:
         return impl_p / total
     denom = 2.0 * (1.0 - z)
-    numerator = (z**2 + 4.0 * (1.0 - z) * impl_p / (1.0 - z)) ** 0.5 - z
+    # (1.0 - z) factors cancel; equivalent to sqrt(z² + 4·impl_p) - z
+    numerator = (z**2 + 4.0 * impl_p) ** 0.5 - z
     return float(numerator / denom)
 
 
