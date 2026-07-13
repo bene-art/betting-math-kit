@@ -1,6 +1,7 @@
 """Tests for Monte Carlo bankroll simulation."""
 
 import pytest
+
 from betting_math_kit.exceptions import InvalidBankrollError, InvalidOddsError
 from betting_math_kit.simulation import (
     SimulationResult,
